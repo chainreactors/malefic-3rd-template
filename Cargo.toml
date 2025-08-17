@@ -1,0 +1,26 @@
+[package]
+name = "malefic-3rd-template"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "malefic_3rd"
+path = "src/lib.rs"
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default=["as_cdylib", "example"]
+as_cdylib = []
+
+example = []
+
+
+[dependencies]
+malefic-proto = {  git = "https://github.com/chainreactors/malefic", branch = "v0.1.2_rc1"}
+malefic-trait = { git = "https://github.com/chainreactors/malefic", branch = "v0.1.2_rc1" }
+
+async-trait = "0.1"
+anyhow = "1.0"
+futures = "0.3.31"
+obfstr = "0.4.3"
+
