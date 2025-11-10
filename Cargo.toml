@@ -16,8 +16,8 @@ example = []
 
 
 [dependencies]
-malefic-proto = {  git = "https://github.com/chainreactors/malefic", branch = "v0.1.2_rc1"}
-malefic-trait = { git = "https://github.com/chainreactors/malefic", branch = "v0.1.2_rc1" }
+malefic-proto = {  git = "https://github.com/chainreactors/malefic", branch = "v0.1.2"}
+malefic-trait = { git = "https://github.com/chainreactors/malefic", branch = "v0.1.2" }
 
 async-trait = "0.1"
 anyhow = "1.0"
