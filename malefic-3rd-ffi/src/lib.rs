@@ -99,3 +99,78 @@ pub fn decode_response(bytes: &[u8]) -> anyhow::Result<Response> {
     prost::Message::decode(bytes)
         .map_err(|e| anyhow!("decode error: {}", e))
 }
+
+// ── Streaming FFI bridge ──────────────────────────────────────────────────
+
+/// Signature shared by all synchronous FFI handlers (C / Zig / Nim).
+pub type HandlerFn = unsafe extern "C" fn(
+    c_uint,
+    *const c_char,
+    c_int,
+    *mut *mut c_char,
+    *mut c_int,
+) -> c_int;
+
+/// Consume every `Request` from `receiver`, call `handler` for each one,
+/// forward intermediate results through `sender`, and return the last result.
+///
+/// This gives synchronous FFI handlers (C/Zig/Nim) multi-round streaming
+/// capability without any changes to the foreign-language source code.
+pub async fn ffi_run_loop(
+    id: u32,
+    receiver: &mut Input,
+    sender: &mut Output,
+    handler: HandlerFn,
+    handler_name: &str,
+) -> ModuleResult {
+    use futures::StreamExt;
+
+    let mut last_result: Option<TaskResult> = None;
+
+    while let Some(body) = receiver.next().await {
+        if let Body::Request(request) = body {
+            let req_buf = encode_request(&request)?;
+
+            let mut resp_ptr: *mut c_char = std::ptr::null_mut();
+            let mut resp_len: c_int = 0;
+
+            let rc = unsafe {
+                handler(
+                    id as c_uint,
+                    req_buf.as_ptr() as *const c_char,
+                    req_buf.len() as c_int,
+                    &mut resp_ptr,
+                    &mut resp_len,
+                )
+            };
+
+            if rc != 0 {
+                return Err(
+                    anyhow!("{} failed (task {}, rc={})", handler_name, id, rc).into(),
+                );
+            }
+
+            let response = if !resp_ptr.is_null() && resp_len > 0 {
+                let buf = unsafe { FfiBuffer::new(resp_ptr, resp_len as usize) };
+                decode_response(buf.as_bytes())?
+            } else {
+                if !resp_ptr.is_null() {
+                    unsafe { ffi_free(resp_ptr) };
+                }
+                Response::default()
+            };
+
+            let task_result = TaskResult::new_with_body(id, Body::Response(response));
+
+            // Forward the previous result as an intermediate message.
+            if let Some(prev) = last_result.take() {
+                let _ = sender.unbounded_send(prev);
+            }
+            last_result = Some(task_result);
+        } else {
+            break;
+        }
+    }
+
+    last_result.ok_or_else(|| anyhow!("module {} produced no output", handler_name).into())
+}

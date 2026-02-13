@@ -245,6 +245,312 @@ fn test_zig_module_single_request() {
     }
 }
 
+// ── Multi-stream helpers & tests ──────────────────────────────────────────
+
+/// Helper: batch multi-stream test for any module.
+///
+/// Sends all `messages` up-front, closes the input, runs the module,
+/// then collects intermediate results (from sender) + final result (from return)
+/// and asserts they match `"{prefix}{msg}"` in order.
+unsafe fn run_multi_stream_batch(
+    bundle: &mut MaleficBundle,
+    module_name: &str,
+    prefix: &str,
+    messages: &[&str],
+    task_id: u32,
+) {
+    let module = bundle
+        .get_mut(module_name)
+        .unwrap_or_else(|| panic!("'{}' not found in bundle", module_name));
+
+    let (input_tx, mut input_rx) = futures::channel::mpsc::unbounded::<Body>();
+    let (mut output_tx, mut output_rx) =
+        futures::channel::mpsc::unbounded::<malefic_proto::module::TaskResult>();
+
+    for msg in messages {
+        let request = modulepb::Request {
+            input: msg.to_string(),
+            ..Default::default()
+        };
+        input_tx
+            .unbounded_send(Body::Request(request))
+            .expect("send failed");
+    }
+    drop(input_tx);
+
+    let result =
+        futures::executor::block_on(module.run(task_id, &mut input_rx, &mut output_tx));
+
+    // Drain intermediate results from sender channel.
+    let mut responses = Vec::new();
+    drop(output_tx);
+    {
+        use futures::{FutureExt, StreamExt};
+        while let Some(tr) = output_rx.next().now_or_never().flatten() {
+            assert_eq!(tr.task_id, task_id);
+            if let Body::Response(resp) = tr.body {
+                responses.push(resp.output);
+            }
+        }
+    }
+
+    // Final result from return value.
+    let task_result = result.expect("module.run() returned error");
+    assert_eq!(task_result.task_id, task_id);
+    if let Body::Response(resp) = task_result.body {
+        responses.push(resp.output);
+    } else {
+        panic!("final result is not Body::Response");
+    }
+
+    assert_eq!(
+        responses.len(),
+        messages.len(),
+        "[{}] expected {} responses, got {}",
+        module_name,
+        messages.len(),
+        responses.len()
+    );
+    for (i, msg) in messages.iter().enumerate() {
+        let expected = format!("{}{}", prefix, msg);
+        assert_eq!(responses[i], expected, "[{}] response #{} mismatch", module_name, i);
+    }
+}
+
+/// C module: multiple requests → ordered responses via ffi_run_loop.
+#[test]
+fn test_c_module_multi_stream() {
+    unsafe {
+        let (_lib, mut bundle) = load_bundle();
+        let msgs = vec!["alpha", "beta", "gamma"];
+        run_multi_stream_batch(
+            &mut bundle,
+            "example_c",
+            "hello from c module, input: ",
+            &msgs,
+            1100,
+        );
+        println!("C multi-stream ({} rounds) passed!", msgs.len());
+    }
+}
+
+/// Zig module: multiple requests → ordered responses via ffi_run_loop.
+#[test]
+fn test_zig_module_multi_stream() {
+    unsafe {
+        let (_lib, mut bundle) = load_bundle();
+        let msgs = vec!["alpha", "beta", "gamma"];
+        run_multi_stream_batch(
+            &mut bundle,
+            "example_zig",
+            "hello from zig module, input: ",
+            &msgs,
+            1200,
+        );
+        println!("Zig multi-stream ({} rounds) passed!", msgs.len());
+    }
+}
+
+/// Nim module: multiple requests → ordered responses via ffi_run_loop.
+#[test]
+fn test_nim_module_multi_stream() {
+    unsafe {
+        let (_lib, mut bundle) = load_bundle();
+        let msgs = vec!["alpha", "beta", "gamma"];
+        run_multi_stream_batch(
+            &mut bundle,
+            "example_nim",
+            "hello from nim module, input: ",
+            &msgs,
+            1300,
+        );
+        println!("Nim multi-stream ({} rounds) passed!", msgs.len());
+    }
+}
+
+/// C module: 5-round batch to verify longer conversations.
+#[test]
+fn test_c_module_multi_stream_5_rounds() {
+    unsafe {
+        let (_lib, mut bundle) = load_bundle();
+        let msgs = vec!["r1", "r2", "r3", "r4", "r5"];
+        run_multi_stream_batch(
+            &mut bundle,
+            "example_c",
+            "hello from c module, input: ",
+            &msgs,
+            1400,
+        );
+        println!("C multi-stream 5-round passed!");
+    }
+}
+
+// ── Interleaved (true alternating) tests ─────────────────────────────────
+
+/// Helper: true interleaved send-receive test.
+///
+/// Runs the module on a background thread. The main thread sends one request
+/// at a time, waits for the corresponding response, then sends the next.
+/// This verifies genuine bidirectional multi-round alternating communication.
+///
+/// Because `ffi_run_loop` forwards the *previous* result when the *next*
+/// request arrives, the protocol is:
+///   send(req_i) → send(req_{i+1}) → recv(resp_i)
+/// For the last request, dropping input_tx causes the loop to exit and
+/// the final response is returned from `run()`.
+unsafe fn run_interleaved_test(
+    bundle: &mut MaleficBundle,
+    module_name: &str,
+    prefix: &str,
+    messages: &[&str],
+    task_id: u32,
+) {
+    use futures::StreamExt;
+
+    assert!(
+        messages.len() >= 2,
+        "interleaved test needs at least 2 messages"
+    );
+
+    // Take an owned module so we can move it into a thread.
+    let mut module = bundle
+        .remove(module_name)
+        .unwrap_or_else(|| panic!("'{}' not found in bundle", module_name));
+
+    let (input_tx, mut input_rx) = futures::channel::mpsc::unbounded::<Body>();
+    let (mut output_tx, mut output_rx) =
+        futures::channel::mpsc::unbounded::<malefic_proto::module::TaskResult>();
+
+    // Run the module on a background thread.
+    let handle = std::thread::spawn(move || {
+        let result =
+            futures::executor::block_on(module.run(task_id, &mut input_rx, &mut output_tx));
+        (result, output_tx) // return output_tx so it's dropped after run() finishes
+    });
+
+    let mut collected: Vec<String> = Vec::new();
+
+    // Send first request — no response yet (nothing previous to flush).
+    input_tx
+        .unbounded_send(Body::Request(modulepb::Request {
+            input: messages[0].to_string(),
+            ..Default::default()
+        }))
+        .expect("send[0] failed");
+
+    // For each subsequent request: send it, then read the previous response.
+    for i in 1..messages.len() {
+        input_tx
+            .unbounded_send(Body::Request(modulepb::Request {
+                input: messages[i].to_string(),
+                ..Default::default()
+            }))
+            .expect(&format!("send[{}] failed", i));
+
+        // The module should now have flushed response[i-1] via sender.
+        // Block until we receive it.
+        let tr = futures::executor::block_on(output_rx.next())
+            .unwrap_or_else(|| panic!("expected intermediate response #{}", i - 1));
+        assert_eq!(tr.task_id, task_id);
+        if let Body::Response(resp) = tr.body {
+            collected.push(resp.output);
+        } else {
+            panic!("intermediate #{} is not Body::Response", i - 1);
+        }
+    }
+
+    // Close input → module loop exits, returning the last response.
+    drop(input_tx);
+
+    let (result, _output_tx) = handle.join().expect("module thread panicked");
+    let task_result = result.expect("module.run() returned error");
+    assert_eq!(task_result.task_id, task_id);
+    if let Body::Response(resp) = task_result.body {
+        collected.push(resp.output);
+    } else {
+        panic!("final result is not Body::Response");
+    }
+
+    // Verify all responses in order.
+    assert_eq!(collected.len(), messages.len());
+    for (i, msg) in messages.iter().enumerate() {
+        let expected = format!("{}{}", prefix, msg);
+        assert_eq!(
+            collected[i], expected,
+            "[{}] interleaved response #{} mismatch",
+            module_name, i
+        );
+    }
+}
+
+/// C module: true alternating send→recv→send→recv across threads.
+#[test]
+fn test_c_module_interleaved() {
+    unsafe {
+        let (_lib, mut bundle) = load_bundle();
+        let msgs = vec!["ping", "pong", "fin"];
+        run_interleaved_test(
+            &mut bundle,
+            "example_c",
+            "hello from c module, input: ",
+            &msgs,
+            2100,
+        );
+        println!("C interleaved 3-round passed!");
+    }
+}
+
+/// Zig module: true alternating send→recv→send→recv across threads.
+#[test]
+fn test_zig_module_interleaved() {
+    unsafe {
+        let (_lib, mut bundle) = load_bundle();
+        let msgs = vec!["ping", "pong", "fin"];
+        run_interleaved_test(
+            &mut bundle,
+            "example_zig",
+            "hello from zig module, input: ",
+            &msgs,
+            2200,
+        );
+        println!("Zig interleaved 3-round passed!");
+    }
+}
+
+/// Nim module: true alternating send→recv→send→recv across threads.
+#[test]
+fn test_nim_module_interleaved() {
+    unsafe {
+        let (_lib, mut bundle) = load_bundle();
+        let msgs = vec!["ping", "pong", "fin"];
+        run_interleaved_test(
+            &mut bundle,
+            "example_nim",
+            "hello from nim module, input: ",
+            &msgs,
+            2300,
+        );
+        println!("Nim interleaved 3-round passed!");
+    }
+}
+
+/// Go module: true alternating send→recv→send→recv across threads.
+#[test]
+fn test_golang_module_interleaved() {
+    unsafe {
+        let (_lib, mut bundle) = load_bundle();
+        let msgs = vec!["ping", "pong", "fin"];
+        run_interleaved_test(
+            &mut bundle,
+            "example_go",
+            "hello from golang module, input: ",
+            &msgs,
+            2400,
+        );
+        println!("Go interleaved 3-round passed!");
+    }
+}
+
 /// Nim module: single request → single response (synchronous handler).
 #[test]
 fn test_nim_module_single_request() {
