@@ -1,6 +1,6 @@
 # Malefic 3rd Party Module Template
 
-用于创建 malefic implant 第三方模块的模板项目。
+用于创建 malefic implant 第三方模块的模板项目，支持 **Rust / Go / C / Zig / Nim** 五种语言编写模块。
 
 Malefic 本体采用最小化依赖设计，所有需要引入第三方库的 module 都在 3rd 中实现。官方维护的公开 3rd module 见 [malefic-3rd](https://github.com/chainreactors/malefic/tree/master/malefic-3rd)。
 
@@ -8,28 +8,15 @@ Malefic 本体采用最小化依赖设计，所有需要引入第三方库的 mo
 
 ```
 malefic-3rd-template/
-├── Cargo.toml
-├── build.rs                          # 自动编译 Go → c-archive 并链接
-├── src/
-│   ├── lib.rs                        # 模块注册入口
-│   ├── prelude.rs
-│   ├── rust_module/
-│   │   └── mod.rs                    # Rust 模块示例
-│   └── golang_module/
-│       ├── mod.rs                    # Rust 侧 FFI 桥接 + 流式 run()
-│       └── go/
-│           ├── go.mod
-│           ├── main.go               # FFI 导出 (Send/Recv) + session 管理
-│           ├── malefic/
-│           │   ├── module.go         # GoModule / GoModuleHandler 接口
-│           │   ├── module.proto      # Request/Response 定义
-│           │   └── module.pb.go      # protobuf 生成代码
-│           ├── example/
-│           │   └── example.go        # 示例 1: 简单 echo (GoModuleHandler)
-│           └── hackbrowser/
-│               └── hackbrowser.go    # 示例 2: HackBrowserData 流式 (GoModule)
-└── tests/
-    └── test_load_dll.rs              # 集成测试
+├── Cargo.toml                        # Workspace 根 + cdylib 入口
+├── src/lib.rs                        # 模块注册入口 (register_modules)
+├── malefic-3rd-ffi/                  # 共享 FFI 工具库 (FfiBuffer, encode/decode)
+├── malefic-3rd-rust/                 # Rust 模块
+├── malefic-3rd-go/                   # Go 模块 (双向流式 FFI)
+├── malefic-3rd-c/                    # C 模块 (nanopb + 同步 handler)
+├── malefic-3rd-zig/                  # Zig 模块 (nanopb + 同步 handler)
+├── malefic-3rd-nim/                  # Nim 模块 (nanopb + 同步 handler)
+└── tests/test_load_dll.rs            # 集成测试 (动态加载 DLL 验证)
 ```
 
 ## Feature 按需加载
@@ -38,12 +25,13 @@ malefic-3rd-template/
 
 ```toml
 [features]
-default = ["as_cdylib", "full"]
+full = ["rust_module", "golang_module", "c_module", "zig_module", "nim_module"]
 
-full = ["rust_module", "golang_module"]
-
-rust_module = []
-golang_module = ["prost"]       # Go 模块需要 prost 做 protobuf 编解码
+rust_module   = ["malefic-3rd-rust"]
+golang_module = ["malefic-3rd-go"]
+c_module      = ["malefic-3rd-c"]
+zig_module    = ["malefic-3rd-zig"]
+nim_module    = ["malefic-3rd-nim"]
 ```
 
 ### 选择性构建
@@ -52,128 +40,29 @@ golang_module = ["prost"]       # Go 模块需要 prost 做 protobuf 编解码
 # 全部模块
 cargo build --target x86_64-pc-windows-gnu --release
 
-# 只要 Rust 模块（不编译 Go）
+# 只要 Rust + Go
 cargo build --target x86_64-pc-windows-gnu --no-default-features \
-  --features "as_cdylib,rust_module" --release
+  --features "as_cdylib,rust_module,golang_module" --release
 
-# 只要 Go 模块
+# 只要 C + Zig
 cargo build --target x86_64-pc-windows-gnu --no-default-features \
-  --features "as_cdylib,golang_module" --release
+  --features "as_cdylib,c_module,zig_module" --release
 ```
 
-### 注册机制
+## FFI 协议
 
-`src/lib.rs` 中通过 `register_module!` 宏和 `#[cfg(feature)]` 实现按需注册：
+所有非 Rust 语言模块遵循相同的 C ABI 协议：
 
-```rust
-#[cfg(feature = "rust_module")]
-pub mod rust_module;
-#[cfg(feature = "golang_module")]
-pub mod golang_module;
+| 导出函数 | 签名 | 说明 |
+|----------|------|------|
+| `XxxModuleName()` | `() -> *const char` | 返回模块名（静态字符串，不需要 free） |
+| `XxxModuleHandle()` | `(task_id, req_data, req_len, &resp_data, &resp_len) -> int` | 同步处理请求，返回 0 成功 |
 
-pub extern "C" fn register_3rd() -> MaleficBundle {
-    let mut map: MaleficBundle = HashMap::new();
+- 请求/响应使用 protobuf 序列化（C/Zig/Nim 用 nanopb，Go 用 protobuf-go）
+- 响应 buffer 由模块侧 `malloc` 分配，Rust 侧通过 `free()` 释放
+- Go 模块额外支持双向流式通信（Send/Recv/CloseInput）
 
-    // Rust 模块：宏内部自带 #[cfg(feature = "...")]
-    register_module!(map, "rust_module", rust_module::RustModule);
-
-    // Go 模块：名称由 Go 侧运行时返回，需手动 cfg
-    #[cfg(feature = "golang_module")]
-    golang_module::register(&mut map);
-
-    map
-}
-```
-
-添加新模块只需三步：
-
-1. `Cargo.toml` 加 feature（按需加入 `full`）
-2. 写模块代码，mod 声明加 `#[cfg(feature = "xxx")]`
-3. 注册处加一行 `register_module!`
-
-## Rust 模块开发
-
-```rust
-use crate::prelude::*;
-
-pub struct YourModule {}
-
-#[async_trait]
-#[module_impl("your_module")]
-impl Module for YourModule {}
-
-#[async_trait]
-impl ModuleImpl for YourModule {
-    async fn run(&mut self, id: u32, receiver: &mut Input, sender: &mut Output) -> ModuleResult {
-        let request = check_request!(receiver, Body::Request)?;
-        let response = Response {
-            output: "hello".to_string(),
-            ..Default::default()
-        };
-        Ok(TaskResult::new_with_body(id, Body::Response(response)))
-    }
-}
-```
-
-## Go 模块开发
-
-### 架构
-
-Rust 和 Go 之间通过双向流式 FFI 通信：
-
-```
-Rust async                          Go goroutine
-─────────                          ─────────────
-Input channel ──GoModuleSend()──→  input chan
-                                       ↓
-                                   module.Run()
-                                       ↓
-recv thread   ←─GoModuleRecv()───  output chan
-    ↓
-mpsc::unbounded
-    ↓
-futures::select! ──→ Output/return
-```
-
-核心 FFI 只有两个函数：
-
-| 函数 | 说明 |
-|------|------|
-| `GoModuleSend(taskId, data, len)` | 发送请求。首次调用自动创建 session 并启动 goroutine |
-| `GoModuleRecv(taskId, outLen, status)` | 阻塞读取响应。`status=1` 表示 Go 侧结束，session 自动清理 |
-
-### 两层接口
-
-Go 侧提供两层抽象，类似 Rust 侧的 `check_request!` 宏：
-
-```go
-// GoModuleHandler — 简单模块只需实现这个接口，无需接触 channel。
-type GoModuleHandler interface {
-    Name() string
-    Handle(taskId uint32, req *malefic.Request) (*malefic.Response, error)
-}
-
-// GoModule — 底层流式接口，需要双向流（多响应/长任务）时直接实现。
-type GoModule interface {
-    Name() string
-    Run(taskId uint32, input <-chan *malefic.Request, output chan<- *malefic.Response)
-}
-```
-
-`malefic.AsModule(handler)` 可将 `GoModuleHandler` 包装为 `GoModule`，内部自动循环 input channel 并转发响应：
-
-```go
-import (
-    "malefic-3rd-go/malefic"
-    "malefic-3rd-go/example"
-    // "malefic-3rd-go/hackbrowser"
-)
-
-var module malefic.GoModule = malefic.AsModule(&example.Module{})     // 简单模块用 AsModule 包装
-var module malefic.GoModule = &hackbrowser.Module{}                   // 流式模块直接赋值
-```
-
-### Protobuf 协议
+### Protobuf 协议（模块使用的核心消息）
 
 ```protobuf
 message Request {
@@ -192,82 +81,22 @@ message Response {
 }
 ```
 
-### 切换 Go 模块
+## 添加新模块
 
-编辑 `main.go` 中的 `module` 变量：
+1. 创建 `malefic-3rd-xxx/` crate，实现 `pub fn register(map: &mut MaleficBundle)`
+2. 根 `Cargo.toml` 添加 feature + optional dependency
+3. `src/lib.rs` 添加 `#[cfg(feature = "xxx_module")] malefic_3rd_xxx::register(&mut map);`
 
-```go
-var module malefic.GoModule = malefic.AsModule(&example.Module{})     // 简单模块
-var module malefic.GoModule = &hackbrowser.Module{}                   // 流式模块
-```
-
-### 示例 1: Hello（GoModuleHandler）
-
-最简单的模块，只需实现 `Handle`，无需接触 channel（`example/example.go`）：
-
-```go
-package example
-
-import "malefic-3rd-go/malefic"
-
-type Module struct{}
-
-func (m *Module) Name() string { return "example_go" }
-
-func (m *Module) Handle(taskId uint32, req *malefic.Request) (*malefic.Response, error) {
-    return &malefic.Response{
-        Output: "hello from golang module, input: " + req.Input,
-    }, nil
-}
-```
-
-### 示例 2: HackBrowserData（流式多响应）
-
-集成 [HackBrowserData](https://github.com/moonD4rk/HackBrowserData)，直接实现 `GoModule` 接口，一个请求触发多个流式响应（`hackbrowser/hackbrowser.go`）：
-
-```go
-package hackbrowser
-
-type Module struct
-
-func (m *Module) Name() string { return "hack_browser_data" }
-
-func (m *Module) Run(taskId uint32, input <-chan *malefic.Request, output chan<- *malefic.Response) {
-    // 流式处理...
-}
-```
-
-请求参数：
-
-| 字段 | 说明 | 默认值 |
-|------|------|--------|
-| `Request.Input` | 浏览器名 | `"all"` |
-| `Request.Params["format"]` | 输出格式 | `"json"` |
-| `Request.Params["profile_path"]` | 自定义 profile 路径 | 自动检测 |
-| `Request.Params["full_export"]` | 是否完整导出 | `"true"` |
-
-响应流：
-
-1. 每个浏览器的每种数据类型（password、cookie、history…）各返回一个 `Response`，`kv` 中包含 `browser` 和 `file` 字段
-2. 最后返回一个汇总 `Response`，`kv.status = "complete"`
-
-### 编写自己的 Go 模块
-
-1. 在 `go/` 下创建新目录（如 `go/yourmod/`），实现模块
-   - 简单请求→响应：实现 `malefic.GoModuleHandler`，用 `malefic.AsModule()` 包装
-   - 需要流式/多响应：直接实现 `malefic.GoModule`
-2. 在 `go.mod` 中添加依赖（`go get ...`）
-3. 修改 `main.go` 中 `module` 变量指向你的实现
-4. 构建即可
+各语言的具体开发指南见对应子目录的 README。
 
 ## 构建与测试
 
 ```bash
-# 构建
-cargo build --target x86_64-pc-windows-gnu --features golang_module --release
+# 构建（全部模块）
+cargo build --target x86_64-pc-windows-gnu --features full --release
 
 # 测试
-cargo test --target x86_64-pc-windows-gnu --features golang_module -- --nocapture
+cargo test --target x86_64-pc-windows-gnu --features full --release -- --nocapture
 
 # 加载到 implant
 load_module --path target/x86_64-pc-windows-gnu/release/malefic_3rd.dll
