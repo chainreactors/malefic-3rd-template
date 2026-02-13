@@ -58,9 +58,3 @@ export fn ZigModuleHandle(
 
     return 0;
 }
-
-export fn ZigFreeBuffer(ptr: ?*anyopaque) callconv(.C) void {
-    if (ptr) |p| {
-        std.c.free(p);
-    }
-}

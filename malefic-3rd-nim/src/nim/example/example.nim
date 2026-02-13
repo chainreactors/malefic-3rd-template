@@ -73,7 +73,3 @@ proc NimModuleHandle(task_id: uint32, req_data: cstring, req_len: cint,
   resp_len[] = cint(encoded_len)
 
   return 0
-
-proc NimFreeBuffer(p: pointer) {.exportc, cdecl.} =
-  if p != nil:
-    c_free(p)

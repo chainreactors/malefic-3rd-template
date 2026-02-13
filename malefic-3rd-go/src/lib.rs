@@ -6,7 +6,6 @@ extern "C" {
     fn GoModuleSend(task_id: c_uint, data: *const c_char, data_len: c_int) -> c_int;
     fn GoModuleRecv(task_id: c_uint, out_len: *mut c_int, status: *mut c_int) -> *mut c_char;
     fn GoModuleCloseInput(task_id: c_uint);
-    fn GoFreeBuffer(ptr: *mut c_char);
 }
 
 /// Send a serialized protobuf request to the Go module via FFI.
@@ -35,7 +34,7 @@ fn go_recv_blocking(id: u32) -> anyhow::Result<Option<Vec<u8>>> {
             if ptr.is_null() {
                 return Err(anyhow!("GoModuleRecv returned null with status 0"));
             }
-            let buf = unsafe { FfiBuffer::new(ptr, out_len as usize, GoFreeBuffer) };
+            let buf = unsafe { FfiBuffer::new(ptr, out_len as usize) };
             Ok(Some(buf.as_bytes().to_vec()))
         }
         1 => Ok(None), // done
@@ -49,7 +48,7 @@ pub struct GolangModule {
 
 impl GolangModule {
     pub fn new() -> Self {
-        let name = unsafe { ffi_module_name(GoModuleName, Some(GoFreeBuffer)) };
+        let name = unsafe { ffi_module_name(GoModuleName, true) };
         Self { name }
     }
 }

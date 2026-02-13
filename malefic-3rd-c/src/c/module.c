@@ -1,4 +1,3 @@
-#include <stdlib.h>
 #include "module.h"
 
 /*
@@ -17,8 +16,4 @@ int CModuleHandle(uint32_t task_id,
         return -1;
     }
     return handler(task_id, req_data, req_len, resp_data, resp_len);
-}
-
-void CFreeBuffer(char* ptr) {
-    free(ptr);
 }

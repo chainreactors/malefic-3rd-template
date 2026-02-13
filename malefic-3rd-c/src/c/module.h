@@ -10,10 +10,9 @@ extern "C" {
 /*
  * C Module Interface for malefic-3rd-c
  *
- * Each module implements these three functions.
  * CModuleName returns a static string (do NOT free).
  * CModuleHandle receives a serialized protobuf Request and returns a serialized Response.
- * The response buffer is malloc'd; Rust frees it via CFreeBuffer.
+ * The response buffer is malloc'd; Rust frees it via free().
  */
 
 /* Returns the module name (static string, caller must NOT free). */
@@ -32,9 +31,6 @@ const char* CModuleName(void);
 int CModuleHandle(uint32_t task_id,
                   const char* req_data, int req_len,
                   char** resp_data, int* resp_len);
-
-/* Free a buffer allocated by the C side. */
-void CFreeBuffer(char* ptr);
 
 /*
  * Module registration callback.

@@ -99,9 +99,4 @@ func GoModuleCloseInput(taskId C.uint) {
 	close(s.input)
 }
 
-//export GoFreeBuffer
-func GoFreeBuffer(ptr *C.char) {
-	C.free(unsafe.Pointer(ptr))
-}
-
 func main() {}
