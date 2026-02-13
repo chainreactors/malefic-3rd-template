@@ -1,32 +1,22 @@
 [package]
-name = "malefic-3rd-template"
+name = "malefic-3rd-go"
 version = "0.1.0"
 edition = "2021"
 
+build = "build.rs"
+
 [lib]
-name = "malefic_3rd"
+name = "malefic_3rd_go"
 path = "src/lib.rs"
-crate-type = ["cdylib", "rlib"]
-
-[features]
-default = ["as_cdylib", "full"]
-as_cdylib = []
-
-full = ["rust_module", "golang_module"]
-
-rust_module = ["malefic-3rd-rust"]
-golang_module = ["malefic-3rd-go"]
 
 [dependencies]
 malefic-proto = { git = "https://github.com/chainreactors/malefic", tag = "v0.1.2" }
 malefic-trait = { git = "https://github.com/chainreactors/malefic", tag = "v0.1.2" }
-malefic-3rd-rust = { path = "malefic-3rd-rust", optional = true }
-malefic-3rd-go = { path = "malefic-3rd-go", optional = true }
 
 async-trait = "0.1"
 anyhow = "1.0"
 futures = "0.3.31"
-obfstr = "0.4.3"
+prost = "0.14.1"
 
 # Pin transitive deps to versions compatible with Rust 1.74 (avoid edition 2024 crates)
 crypto-common = "=0.1.6"
@@ -34,13 +24,9 @@ bytes = "=1.10.1"
 hashbrown = "=0.15.5"
 getrandom = "=0.2.16"
 
-[dev-dependencies]
-libloading = "0.8"
-
 [profile.release]
 panic = "abort"
 opt-level = "z"
 strip = true
 lto = "fat"
 codegen-units = 1
-

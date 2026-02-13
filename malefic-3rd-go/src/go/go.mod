@@ -8,6 +8,7 @@ require (
 )
 
 require (
+	github.com/aperturerobotics/json-iterator-lite v1.0.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/gocarina/gocsv v0.0.0-20231116093920-b87c2d0e983a // indirect
 	github.com/godbus/dbus/v5 v5.1.0 // indirect

@@ -1,0 +1,17 @@
+[package]
+name = "malefic-3rd-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "malefic_3rd_rust"
+path = "src/lib.rs"
+
+[dependencies]
+malefic-proto = { git = "https://github.com/chainreactors/malefic", tag = "v0.1.2" }
+malefic-trait = { git = "https://github.com/chainreactors/malefic", tag = "v0.1.2" }
+
+async-trait = "0.1"
+anyhow = "1.0"
+futures = "0.3.31"
+obfstr = "0.4.3"

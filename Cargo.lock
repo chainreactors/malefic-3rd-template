@@ -436,6 +436,34 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "13dc2df351e3202783a1fe0d44375f7295ffb4049267b0f3018346dc122a1d94"
 
 [[package]]
+name = "malefic-3rd-go"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "bytes",
+ "crypto-common",
+ "futures",
+ "getrandom 0.2.16",
+ "hashbrown",
+ "malefic-proto",
+ "malefic-trait",
+ "prost",
+]
+
+[[package]]
+name = "malefic-3rd-rust"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "futures",
+ "malefic-proto",
+ "malefic-trait",
+ "obfstr",
+]
+
+[[package]]
 name = "malefic-3rd-template"
 version = "0.1.0"
 dependencies = [
@@ -447,15 +475,17 @@ dependencies = [
  "getrandom 0.2.16",
  "hashbrown",
  "libloading",
+ "malefic-3rd-go",
+ "malefic-3rd-rust",
  "malefic-proto",
  "malefic-trait",
  "obfstr",
- "prost",
 ]
 
 [[package]]
 name = "malefic-proto"
 version = "0.1.0"
+source = "git+https://github.com/chainreactors/malefic?tag=v0.1.2#54cf570fb7a6438892ca8c13e15f854e7ad503c3"
 dependencies = [
  "aes",
  "anyhow",
@@ -475,6 +505,7 @@ dependencies = [
 [[package]]
 name = "malefic-trait"
 version = "0.1.1"
+source = "git+https://github.com/chainreactors/malefic?tag=v0.1.2#54cf570fb7a6438892ca8c13e15f854e7ad503c3"
 dependencies = [
  "proc-macro2",
  "quote",
