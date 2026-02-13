@@ -8,10 +8,10 @@ name = "malefic_3rd_rust"
 path = "src/lib.rs"
 
 [dependencies]
-malefic-proto = { git = "https://github.com/chainreactors/malefic", tag = "v0.1.2" }
-malefic-trait = { git = "https://github.com/chainreactors/malefic", tag = "v0.1.2" }
+malefic-proto = { workspace = true }
+malefic-trait = { workspace = true }
 
-async-trait = "0.1"
-anyhow = "1.0"
-futures = "0.3.31"
-obfstr = "0.4.3"
+async-trait = { workspace = true }
+anyhow = { workspace = true }
+futures = { workspace = true }
+obfstr = { workspace = true }

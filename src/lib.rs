@@ -13,6 +13,9 @@ pub extern "C" fn register_3rd() -> MaleficBundle {
     #[cfg(feature = "golang_module")]
     malefic_3rd_go::register(&mut map);
 
+    #[cfg(feature = "c_module")]
+    malefic_3rd_c::register(&mut map);
+
     map
 }
 

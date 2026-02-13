@@ -1,3 +1,28 @@
+[workspace]
+members = [
+    ".",
+    "malefic-3rd-rust",
+    "malefic-3rd-go",
+    "malefic-3rd-c",
+    "malefic-3rd-ffi",
+]
+
+[workspace.dependencies]
+malefic-proto = { git = "https://github.com/chainreactors/malefic", tag = "v0.1.2" }
+malefic-trait = { git = "https://github.com/chainreactors/malefic", tag = "v0.1.2" }
+
+async-trait = "0.1"
+anyhow = "1.0"
+futures = "0.3.31"
+prost = "0.14.1"
+obfstr = "0.4.3"
+
+# Pin transitive deps to versions compatible with Rust 1.74 (avoid edition 2024 crates)
+crypto-common = "=0.1.6"
+bytes = "=1.10.1"
+hashbrown = "=0.15.5"
+getrandom = "=0.2.16"
+
 [package]
 name = "malefic-3rd-template"
 version = "0.1.0"
@@ -12,27 +37,29 @@ crate-type = ["cdylib", "rlib"]
 default = ["as_cdylib", "full"]
 as_cdylib = []
 
-full = ["rust_module", "golang_module"]
+full = ["rust_module", "golang_module", "c_module"]
 
 rust_module = ["malefic-3rd-rust"]
 golang_module = ["malefic-3rd-go"]
+c_module = ["malefic-3rd-c"]
 
 [dependencies]
-malefic-proto = { git = "https://github.com/chainreactors/malefic", tag = "v0.1.2" }
-malefic-trait = { git = "https://github.com/chainreactors/malefic", tag = "v0.1.2" }
+malefic-proto = { workspace = true }
+malefic-trait = { workspace = true }
 malefic-3rd-rust = { path = "malefic-3rd-rust", optional = true }
 malefic-3rd-go = { path = "malefic-3rd-go", optional = true }
+malefic-3rd-c = { path = "malefic-3rd-c", optional = true }
 
-async-trait = "0.1"
-anyhow = "1.0"
-futures = "0.3.31"
-obfstr = "0.4.3"
+async-trait = { workspace = true }
+anyhow = { workspace = true }
+futures = { workspace = true }
+obfstr = { workspace = true }
 
-# Pin transitive deps to versions compatible with Rust 1.74 (avoid edition 2024 crates)
-crypto-common = "=0.1.6"
-bytes = "=1.10.1"
-hashbrown = "=0.15.5"
-getrandom = "=0.2.16"
+# Pin transitive deps
+crypto-common = { workspace = true }
+bytes = { workspace = true }
+hashbrown = { workspace = true }
+getrandom = { workspace = true }
 
 [dev-dependencies]
 libloading = "0.8"
@@ -43,4 +70,3 @@ opt-level = "z"
 strip = true
 lto = "fat"
 codegen-units = 1
-

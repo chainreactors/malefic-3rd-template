@@ -52,6 +52,7 @@ fn test_dll_loads_and_registers_modules() {
         println!("Registered modules: {:?}", bundle.keys().collect::<Vec<_>>());
         assert!(bundle.contains_key("rust_module"));
         assert!(bundle.contains_key("example_go"));
+        assert!(bundle.contains_key("example_c"));
         println!("All {} modules registered.", bundle.len());
     }
 }
@@ -155,5 +156,47 @@ fn test_golang_module_multi_stream() {
         }
 
         println!("Multi-stream test passed!");
+    }
+}
+
+/// C module: single request → single response (synchronous handler).
+#[test]
+fn test_c_module_single_request() {
+    unsafe {
+        let (_lib, mut bundle) = load_bundle();
+
+        let module = bundle
+            .get_mut("example_c")
+            .expect("'example_c' module not found in bundle");
+
+        let (input_tx, mut input_rx) = futures::channel::mpsc::unbounded::<Body>();
+        let (mut output_tx, _output_rx) =
+            futures::channel::mpsc::unbounded::<malefic_proto::module::TaskResult>();
+
+        let request = modulepb::Request {
+            input: "helloworld".to_string(),
+            ..Default::default()
+        };
+        input_tx
+            .unbounded_send(Body::Request(request))
+            .expect("Failed to send request");
+        drop(input_tx);
+
+        let task_id = 300u32;
+        let result =
+            futures::executor::block_on(module.run(task_id, &mut input_rx, &mut output_tx));
+
+        let task_result = result.expect("module.run() returned error");
+        assert_eq!(task_result.task_id, task_id);
+
+        match task_result.body {
+            Body::Response(resp) => {
+                println!("C module response: {:?}", resp.output);
+                assert_eq!(resp.output, "hello from c module, input: helloworld");
+            }
+            other => panic!("Expected Body::Response, got {:?}", other),
+        }
+
+        println!("C module single request test passed!");
     }
 }
