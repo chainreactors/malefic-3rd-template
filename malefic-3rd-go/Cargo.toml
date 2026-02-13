@@ -9,6 +9,11 @@ build = "build.rs"
 name = "malefic_3rd_go"
 path = "src/lib.rs"
 
+[features]
+default = ["go_example"]
+go_example = []
+go_hackbrowser = []
+
 [dependencies]
 malefic-3rd-ffi = { path = "../malefic-3rd-ffi" }
 malefic-proto = { workspace = true }

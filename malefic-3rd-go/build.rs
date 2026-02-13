@@ -25,7 +25,12 @@ fn build_go(go_src_dir: &PathBuf, archive_path: &PathBuf) {
 
 fn main() {
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
-    let go_src_dir = manifest_dir.join("src").join("go");
+    let go_module_dir = if cfg!(feature = "go_hackbrowser") {
+        "hackbrowser"
+    } else {
+        "example"
+    };
+    let go_src_dir = manifest_dir.join("src").join("go").join(go_module_dir);
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
     let lib_name = "malefic_go";
     let archive_path = out_dir.join(format!("lib{}.a", lib_name));

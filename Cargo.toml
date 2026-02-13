@@ -43,6 +43,7 @@ full = ["rust_module", "golang_module", "c_module", "zig_module", "nim_module"]
 
 rust_module = ["malefic-3rd-rust"]
 golang_module = ["malefic-3rd-go"]
+golang_hackbrowser = ["malefic-3rd-go/go_hackbrowser"]
 c_module = ["malefic-3rd-c"]
 zig_module = ["malefic-3rd-zig"]
 nim_module = ["malefic-3rd-nim"]

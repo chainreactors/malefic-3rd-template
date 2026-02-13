@@ -1,8 +1,8 @@
-package hackbrowser
+package main
 
 import (
 	"fmt"
-	"malefic-3rd-go/malefic"
+	malefic "malefic-core"
 	"os"
 	"path/filepath"
 	"strings"

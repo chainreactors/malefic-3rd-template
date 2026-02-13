@@ -1,14 +1,15 @@
-module malefic-3rd-go
+module malefic-hackbrowser
 
 go 1.23.1
 
 require (
-	github.com/aperturerobotics/protobuf-go-lite v0.12.1
 	github.com/moond4rk/hackbrowserdata v0.4.6
+	malefic-core v0.0.0
 )
 
 require (
 	github.com/aperturerobotics/json-iterator-lite v1.0.0 // indirect
+	github.com/aperturerobotics/protobuf-go-lite v0.12.1 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/gocarina/gocsv v0.0.0-20231116093920-b87c2d0e983a // indirect
 	github.com/godbus/dbus/v5 v5.1.0 // indirect
@@ -35,3 +36,5 @@ require (
 	modernc.org/strutil v1.2.0 // indirect
 	modernc.org/token v1.1.0 // indirect
 )
+
+replace malefic-core => ../malefic
