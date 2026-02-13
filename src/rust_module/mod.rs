@@ -1,19 +1,20 @@
 use crate::prelude::*;
 
-pub struct Example {}
+pub struct RustModule {}
 
 #[async_trait]
-#[module_impl("example")]
-impl Module for Example {}
+#[module_impl("rust_module")]
+impl Module for RustModule {}
 
 #[async_trait]
-impl ModuleImpl for Example {
+impl ModuleImpl for RustModule {
     #[allow(unused_variables)]
     async fn run(&mut self, id: u32, receiver: &mut crate::Input, sender: &mut crate::Output) -> ModuleResult {
         let request = check_request!(receiver, Body::Request)?;
-        let example_return = "this is 1n73rn4l 0f m4l1c3";
-        let mut response = Response::default();
-        response.output = example_return.to_string();
+        let response = Response {
+            output: "this is rust module".to_string(),
+            ..Default::default()
+        };
         Ok(TaskResult::new_with_body(id, Body::Response(response)))
     }
 }
