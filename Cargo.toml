@@ -4,6 +4,8 @@ members = [
     "malefic-3rd-rust",
     "malefic-3rd-go",
     "malefic-3rd-c",
+    "malefic-3rd-zig",
+    "malefic-3rd-nim",
     "malefic-3rd-ffi",
 ]
 
@@ -37,11 +39,13 @@ crate-type = ["cdylib", "rlib"]
 default = ["as_cdylib", "full"]
 as_cdylib = []
 
-full = ["rust_module", "golang_module", "c_module"]
+full = ["rust_module", "golang_module", "c_module", "zig_module", "nim_module"]
 
 rust_module = ["malefic-3rd-rust"]
 golang_module = ["malefic-3rd-go"]
 c_module = ["malefic-3rd-c"]
+zig_module = ["malefic-3rd-zig"]
+nim_module = ["malefic-3rd-nim"]
 
 [dependencies]
 malefic-proto = { workspace = true }
@@ -49,6 +53,8 @@ malefic-trait = { workspace = true }
 malefic-3rd-rust = { path = "malefic-3rd-rust", optional = true }
 malefic-3rd-go = { path = "malefic-3rd-go", optional = true }
 malefic-3rd-c = { path = "malefic-3rd-c", optional = true }
+malefic-3rd-zig = { path = "malefic-3rd-zig", optional = true }
+malefic-3rd-nim = { path = "malefic-3rd-nim", optional = true }
 
 async-trait = { workspace = true }
 anyhow = { workspace = true }

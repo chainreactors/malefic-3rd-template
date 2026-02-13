@@ -16,6 +16,12 @@ pub extern "C" fn register_3rd() -> MaleficBundle {
     #[cfg(feature = "c_module")]
     malefic_3rd_c::register(&mut map);
 
+    #[cfg(feature = "zig_module")]
+    malefic_3rd_zig::register(&mut map);
+
+    #[cfg(feature = "nim_module")]
+    malefic_3rd_nim::register(&mut map);
+
     map
 }
 

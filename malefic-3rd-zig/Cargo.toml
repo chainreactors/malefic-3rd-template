@@ -1,0 +1,23 @@
+[package]
+name = "malefic-3rd-zig"
+version = "0.1.0"
+edition = "2021"
+
+build = "build.rs"
+
+[lib]
+name = "malefic_3rd_zig"
+path = "src/lib.rs"
+
+[dependencies]
+malefic-3rd-ffi = { path = "../malefic-3rd-ffi" }
+malefic-proto = { workspace = true }
+malefic-trait = { workspace = true }
+
+async-trait = { workspace = true }
+anyhow = { workspace = true }
+futures = { workspace = true }
+prost = { workspace = true }
+
+[build-dependencies]
+cc = "1"

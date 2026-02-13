@@ -475,6 +475,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "malefic-3rd-nim"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "cc",
+ "futures",
+ "malefic-3rd-ffi",
+ "malefic-proto",
+ "malefic-trait",
+ "prost",
+]
+
+[[package]]
 name = "malefic-3rd-rust"
 version = "0.1.0"
 dependencies = [
@@ -500,10 +514,26 @@ dependencies = [
  "libloading",
  "malefic-3rd-c",
  "malefic-3rd-go",
+ "malefic-3rd-nim",
  "malefic-3rd-rust",
+ "malefic-3rd-zig",
  "malefic-proto",
  "malefic-trait",
  "obfstr",
+]
+
+[[package]]
+name = "malefic-3rd-zig"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "cc",
+ "futures",
+ "malefic-3rd-ffi",
+ "malefic-proto",
+ "malefic-trait",
+ "prost",
 ]
 
 [[package]]
