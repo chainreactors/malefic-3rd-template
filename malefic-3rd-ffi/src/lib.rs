@@ -10,7 +10,7 @@
 pub use std::ffi::{c_char, c_int, c_uint, CStr};
 pub use async_trait::async_trait;
 pub use anyhow::anyhow;
-pub use malefic_proto::prelude::*;
+pub use malefic_module::prelude::*;
 pub use malefic_proto::proto::modulepb::Request;
 pub use prost;
 pub use futures;

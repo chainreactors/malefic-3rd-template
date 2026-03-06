@@ -1,6 +1,6 @@
 use async_trait::async_trait;
-use malefic_trait::module_impl;
-use malefic_proto::prelude::*;
+use malefic_macro::module_impl;
+use malefic_module::prelude::*;
 
 pub struct RustModule {}
 

@@ -1,4 +1,5 @@
-use malefic_3rd_ffi::*;
+use malefic_module::prelude::*;
+use malefic_module::ffi::*;
 use std::ffi::{c_char, c_int, c_uint};
 
 extern "C" {

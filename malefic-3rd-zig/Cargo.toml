@@ -10,14 +10,12 @@ name = "malefic_3rd_zig"
 path = "src/lib.rs"
 
 [dependencies]
-malefic-3rd-ffi = { path = "../malefic-3rd-ffi" }
 malefic-proto = { workspace = true }
-malefic-trait = { workspace = true }
+malefic-module = { workspace = true }
 
 async-trait = { workspace = true }
 anyhow = { workspace = true }
 futures = { workspace = true }
-prost = { workspace = true }
 
 [build-dependencies]
 cc = "1"
