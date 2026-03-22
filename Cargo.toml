@@ -9,15 +9,13 @@ members = [
 ]
 
 [workspace.dependencies]
-malefic-proto = { git = "https://github.com/chainreactors/malefic", branch = "master" }
-malefic-module = { git = "https://github.com/chainreactors/malefic", branch = "master", features = ["ffi"] }
-malefic-macro = { git = "https://github.com/chainreactors/malefic", branch = "master" }
-malefic-obfuscate = { git = "https://github.com/chainreactors/malefic", branch = "master" }
+malefic-proto = { git = "https://github.com/chainreactors/malefic", branch = "crates" }
+malefic-module = { git = "https://github.com/chainreactors/malefic", branch = "crates" }
+malefic-runtime = { git = "https://github.com/chainreactors/malefic", branch = "crates", default-features = false }
+malefic-common = { git = "https://github.com/chainreactors/malefic", branch = "crates", default-features = false, features = ["random_nanorand"] }
 
-async-trait = "0.1"
-anyhow = "1.0"
 futures = "0.3.31"
-prost = "0.14.3"
+prost = { git = "https://github.com/chainreactors/prost.git", branch = "skip-field-names-v0.14.1" }
 
 # Pin transitive deps to versions compatible with Rust 1.74 (avoid edition 2024 crates)
 crypto-common = "=0.1.6"
@@ -49,17 +47,12 @@ zig_module = ["malefic-3rd-zig"]
 nim_module = ["malefic-3rd-nim"]
 
 [dependencies]
-malefic-proto = { workspace = true }
-malefic-module = { workspace = true }
+malefic-runtime = { workspace = true }
 malefic-3rd-rust = { path = "malefic-3rd-rust", optional = true }
 malefic-3rd-go = { path = "malefic-3rd-go", optional = true }
 malefic-3rd-c = { path = "malefic-3rd-c", optional = true }
 malefic-3rd-zig = { path = "malefic-3rd-zig", optional = true }
 malefic-3rd-nim = { path = "malefic-3rd-nim", optional = true }
-
-async-trait = { workspace = true }
-anyhow = { workspace = true }
-futures = { workspace = true }
 
 # Pin transitive deps
 crypto-common = { workspace = true }
@@ -69,6 +62,13 @@ getrandom = { workspace = true }
 
 [dev-dependencies]
 libloading = "0.8"
+malefic-runtime = { workspace = true, features = ["host", "tokio"] }
+malefic-module = { workspace = true }
+malefic-proto = { workspace = true }
+malefic-common = { workspace = true, features = ["tokio"] }
+futures = { workspace = true }
+futures-channel = "0.3"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 
 [profile.release]
 panic = "abort"

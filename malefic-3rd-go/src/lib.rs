@@ -1,5 +1,4 @@
-use malefic_module::prelude::*;
-use malefic_module::ffi::*;
+use malefic_3rd_ffi::*;
 use std::ffi::{c_char, c_int, c_uint};
 
 extern "C" {
@@ -9,37 +8,31 @@ extern "C" {
     fn GoModuleCloseInput(task_id: c_uint);
 }
 
-/// Send a serialized protobuf request to the Go module via FFI.
-fn go_send(id: u32, data: &[u8]) -> anyhow::Result<()> {
+fn go_send(id: u32, data: &[u8]) -> Result<(), String> {
     let rc = unsafe {
-        GoModuleSend(
-            id as c_uint,
-            data.as_ptr() as *const c_char,
-            data.len() as c_int,
-        )
+        GoModuleSend(id as c_uint, data.as_ptr() as *const c_char, data.len() as c_int)
     };
     if rc != 0 {
-        return Err(anyhow!("GoModuleSend failed (task {})", id));
+        Err(format!("GoModuleSend failed (task {})", id))
+    } else {
+        Ok(())
     }
-    Ok(())
 }
 
-/// Blocking call that reads the next response from Go.
-/// Returns `Ok(Some(bytes))` for data, `Ok(None)` when the module is done.
-fn go_recv_blocking(id: u32) -> anyhow::Result<Option<Vec<u8>>> {
+fn go_recv_blocking(id: u32) -> Result<Option<Vec<u8>>, String> {
     let mut out_len: c_int = 0;
     let mut status: c_int = 0;
     let ptr = unsafe { GoModuleRecv(id as c_uint, &mut out_len, &mut status) };
     match status {
         0 => {
             if ptr.is_null() {
-                return Err(anyhow!("GoModuleRecv returned null with status 0"));
+                return Err("GoModuleRecv returned null with status 0".into());
             }
             let buf = unsafe { FfiBuffer::new(ptr, out_len as usize) };
             Ok(Some(buf.as_bytes().to_vec()))
         }
         1 => Ok(None), // done
-        _ => Err(anyhow!("GoModuleRecv error (status={})", status)),
+        _ => Err(format!("GoModuleRecv error (status={})", status)),
     }
 }
 
@@ -47,143 +40,83 @@ pub struct GolangModule {
     name: String,
 }
 
-impl GolangModule {
-    pub fn new() -> Self {
+impl RtModule for GolangModule {
+    fn name() -> &'static str { "example_go" }
+
+    fn new() -> Self {
         let name = unsafe { ffi_module_name(GoModuleName, true) };
         Self { name }
     }
-}
 
-#[async_trait]
-impl Module for GolangModule {
-    fn name() -> &'static str
-    where
-        Self: Sized,
-    {
-        "golang_module"
-    }
+    fn run(&mut self, id: u32, ch: &RtChannel) -> RtResult {
+        let mut last_response: Option<Body> = None;
 
-    fn new() -> Self
-    where
-        Self: Sized,
-    {
-        GolangModule::new()
-    }
-
-    fn new_instance(&self) -> Box<MaleficModule> {
-        Box::new(GolangModule {
-            name: self.name.clone(),
-        })
-    }
-}
-
-#[async_trait]
-impl ModuleImpl for GolangModule {
-    async fn run(
-        &mut self,
-        id: u32,
-        receiver: &mut Input,
-        sender: &mut Output,
-    ) -> ModuleResult {
-        use futures::channel::mpsc;
-        use futures::StreamExt;
-
-        // Channel for the blocking recv thread to send decoded responses back.
-        let (recv_tx, mut recv_rx) = mpsc::unbounded::<anyhow::Result<Option<Vec<u8>>>>();
-
-        // Spawn a thread that blocks on GoModuleRecv and forwards results.
-        let recv_task_id = id;
-        let recv_handle = std::thread::spawn(move || {
-            loop {
-                let result = go_recv_blocking(recv_task_id);
-                let is_done = matches!(&result, Ok(None));
-                let is_err = result.is_err();
-                let _ = recv_tx.unbounded_send(result);
-                if is_done || is_err {
+        // Process incoming requests synchronously.
+        // Since run() is already blocking, no need for threads or async.
+        loop {
+            let body = match ch.recv() {
+                Ok(b) => b,
+                Err(RtChannelError::Eof) => {
+                    // Input closed — close Go input and drain remaining responses.
+                    unsafe { GoModuleCloseInput(id as c_uint) };
+                    // Drain any remaining Go responses.
+                    loop {
+                        match go_recv_blocking(id) {
+                            Ok(Some(resp_bytes)) => {
+                                if let Ok(response) = decode_response(&resp_bytes) {
+                                    if let Some(prev) = last_response.take() {
+                                        if ch.send(prev).is_err() { break; }
+                                    }
+                                    last_response = Some(Body::Response(response));
+                                }
+                            }
+                            _ => break,
+                        }
+                    }
                     break;
                 }
-            }
-        });
+                Err(e) => return RtResult::Error(e.to_string()),
+            };
 
-        let mut last_result: Option<TaskResult> = None;
-        let mut go_done = false;
-        let mut input_closed = false;
-
-        loop {
-            if go_done {
-                break;
-            }
-
-            if input_closed {
-                // Input already closed — only wait for Go responses.
-                match recv_rx.next().await {
-                    Some(Ok(Some(response_bytes))) => {
-                        let response = decode_response(&response_bytes)?;
-                        let task_result = TaskResult::new_with_body(id, Body::Response(response));
-                        if let Some(prev) = last_result.take() {
-                            let _ = sender.unbounded_send(prev);
-                        }
-                        last_result = Some(task_result);
+            match body {
+                Body::Request(request) => {
+                    // Encode and send to Go.
+                    let buf = match encode_request(&request) {
+                        Ok(b) => b,
+                        Err(e) => return RtResult::Error(format!("encode: {}", e)),
+                    };
+                    if let Err(e) = go_send(id, &buf) {
+                        return RtResult::Error(e);
                     }
-                    Some(Ok(None)) => go_done = true,
-                    Some(Err(e)) => {
-                        go_done = true;
-                        if last_result.is_none() {
-                            return Err(e.into());
+
+                    // Receive response from Go (blocking).
+                    match go_recv_blocking(id) {
+                        Ok(Some(resp_bytes)) => {
+                            let response = match decode_response(&resp_bytes) {
+                                Ok(r) => r,
+                                Err(e) => return RtResult::Error(format!("decode: {}", e)),
+                            };
+                            // Buffer: send previous result, store current.
+                            if let Some(prev) = last_response.take() {
+                                if ch.send(prev).is_err() { break; }
+                            }
+                            last_response = Some(Body::Response(response));
                         }
+                        Ok(None) => break, // Go module done
+                        Err(e) => return RtResult::Error(e),
                     }
-                    None => go_done = true,
                 }
-            } else {
-                futures::select! {
-                    // Incoming request from Rust side → forward to Go
-                    body = receiver.next() => {
-                        match body {
-                            Some(Body::Request(request)) => {
-                                let buf = encode_request(&request)?;
-                                go_send(id, &buf)?;
-                            }
-                            _ => {
-                                // Input closed or unexpected body — close Go input once
-                                input_closed = true;
-                                unsafe { GoModuleCloseInput(id as c_uint) };
-                            }
-                        }
-                    }
-                    // Response from Go recv thread
-                    recv_result = recv_rx.next() => {
-                        match recv_result {
-                            Some(Ok(Some(response_bytes))) => {
-                                let response = decode_response(&response_bytes)?;
-                                let task_result = TaskResult::new_with_body(id, Body::Response(response));
-                                if let Some(prev) = last_result.take() {
-                                    let _ = sender.unbounded_send(prev);
-                                }
-                                last_result = Some(task_result);
-                            }
-                            Some(Ok(None)) => go_done = true,
-                            Some(Err(e)) => {
-                                go_done = true;
-                                if last_result.is_none() {
-                                    return Err(e.into());
-                                }
-                            }
-                            None => go_done = true,
-                        }
-                    }
+                _ => {
+                    // Non-request body — close Go input.
+                    unsafe { GoModuleCloseInput(id as c_uint) };
+                    break;
                 }
             }
         }
 
-        // Wait for the recv thread to finish.
-        let _ = recv_handle.join();
-
-        last_result.ok_or_else(|| anyhow!("Go module produced no output").into())
+        match last_response {
+            Some(body) => RtResult::Done(body),
+            None => RtResult::Error("Go module produced no output".into()),
+        }
     }
-}
-
-/// Register the Go module into the bundle.
-pub fn register(map: &mut MaleficBundle) {
-    let module = GolangModule::new();
-    map.insert(module.name.clone(), Box::new(module));
 }

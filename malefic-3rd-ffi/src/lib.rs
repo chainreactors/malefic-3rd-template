@@ -1,19 +1,19 @@
 //! Shared FFI utilities for malefic 3rd-party language modules.
 //!
-//! Provides common helpers for:
-//! - Module name retrieval from FFI
-//! - Protobuf request encoding / response decoding (prost)
-//! - RAII buffer management for foreign-allocated memory
-//! - Re-exports of types needed by FFI module implementations
+//! Provides:
+//! - [`FfiBuffer`] — RAII guard for foreign-allocated memory
+//! - [`ffi_free`] / [`ffi_module_name`] — C memory helpers
+//! - [`encode_request`] / [`decode_response`] — protobuf serialization
+//! - [`HandlerFn`] / [`ffi_handler_loop`] — bridge for synchronous handlers
+//! - Re-exports of [`RtModule`], [`RtChannel`], [`RtResult`] for module implementations
 
-// ── Re-exports ──────────────────────────────────────────────────────────────
 pub use std::ffi::{c_char, c_int, c_uint, CStr};
-pub use async_trait::async_trait;
-pub use anyhow::anyhow;
-pub use malefic_module::prelude::*;
-pub use malefic_proto::proto::modulepb::Request;
-pub use prost;
-pub use futures;
+
+// ── Runtime re-exports (used by all module wrappers) ────────────────────────
+
+pub use malefic_runtime::module_sdk::{RtModule, RtChannel, RtResult, RtChannelError};
+pub use malefic_proto::proto::implantpb::spite::Body;
+pub use malefic_proto::proto::modulepb::{Request, Response};
 
 // ── libc free ───────────────────────────────────────────────────────────────
 
@@ -32,23 +32,19 @@ pub unsafe fn ffi_free(ptr: *mut c_char) {
 // ── FfiBuffer ───────────────────────────────────────────────────────────────
 
 /// RAII guard for a buffer allocated by foreign code via `malloc`.
-///
 /// On drop, calls `free()` to release the memory.
-/// This prevents leaks when decoding fails or an early return occurs.
 pub struct FfiBuffer {
     ptr: *mut c_char,
     len: usize,
 }
 
 impl FfiBuffer {
-    /// Wrap a foreign-allocated pointer.
     /// # Safety
     /// `ptr` must be non-null, valid for `len` bytes, and allocated via `malloc`.
     pub unsafe fn new(ptr: *mut c_char, len: usize) -> Self {
         Self { ptr, len }
     }
 
-    /// View the buffer contents as a byte slice.
     pub fn as_bytes(&self) -> &[u8] {
         unsafe { std::slice::from_raw_parts(self.ptr as *const u8, self.len) }
     }
@@ -66,9 +62,7 @@ impl Drop for FfiBuffer {
 
 /// Retrieve a module name string from an FFI `name_fn`.
 ///
-/// If `needs_free` is true, the returned C string pointer will be freed after
-/// copying (Go-style, where the name is heap-allocated via `C.CString`).
-/// If false, the pointer is assumed to be static (C/Zig/Nim-style).
+/// `needs_free`: true for Go (heap-allocated `C.CString`), false for C/Zig/Nim (static).
 ///
 /// # Safety
 /// `name_fn` must return a valid, NUL-terminated C string.
@@ -86,91 +80,91 @@ pub unsafe fn ffi_module_name(
 
 // ── Protobuf encode / decode ────────────────────────────────────────────────
 
-/// Encode a prost `Request` into bytes suitable for passing across FFI.
-pub fn encode_request(request: &Request) -> anyhow::Result<Vec<u8>> {
+pub fn encode_request(request: &Request) -> Result<Vec<u8>, String> {
     let mut buf = Vec::new();
     prost::Message::encode(request, &mut buf)
-        .map_err(|e| anyhow!("encode error: {}", e))?;
+        .map_err(|e| format!("encode error: {}", e))?;
     Ok(buf)
 }
 
-/// Decode a prost `Response` from bytes returned by foreign code.
-pub fn decode_response(bytes: &[u8]) -> anyhow::Result<Response> {
+pub fn decode_response(bytes: &[u8]) -> Result<Response, String> {
     prost::Message::decode(bytes)
-        .map_err(|e| anyhow!("decode error: {}", e))
+        .map_err(|e| format!("decode error: {}", e))
 }
 
-// ── Streaming FFI bridge ──────────────────────────────────────────────────
+// ── Synchronous FFI handler bridge ──────────────────────────────────────────
 
 /// Signature shared by all synchronous FFI handlers (C / Zig / Nim).
 pub type HandlerFn = unsafe extern "C" fn(
-    c_uint,
-    *const c_char,
-    c_int,
-    *mut *mut c_char,
-    *mut c_int,
+    c_uint, *const c_char, c_int, *mut *mut c_char, *mut c_int,
 ) -> c_int;
 
-/// Consume every `Request` from `receiver`, call `handler` for each one,
-/// forward intermediate results through `sender`, and return the last result.
+/// Bridge a synchronous `HandlerFn` into the `RtModule::run(channel)` protocol.
 ///
-/// This gives synchronous FFI handlers (C/Zig/Nim) multi-round streaming
-/// capability without any changes to the foreign-language source code.
-pub async fn ffi_run_loop(
+/// Buffers the previous result and sends it as an intermediate message when the
+/// next request arrives. The final result is returned as `RtResult::Done`.
+pub fn ffi_handler_loop(
     id: u32,
-    receiver: &mut Input,
-    sender: &mut Output,
+    channel: &RtChannel,
     handler: HandlerFn,
     handler_name: &str,
-) -> ModuleResult {
-    use futures::StreamExt;
+) -> RtResult {
+    let mut last_response: Option<Body> = None;
 
-    let mut last_result: Option<TaskResult> = None;
+    loop {
+        let body = match channel.recv() {
+            Ok(b) => b,
+            Err(RtChannelError::Eof) => break,
+            Err(e) => return RtResult::Error(format!("{}: recv: {}", handler_name, e)),
+        };
 
-    while let Some(body) = receiver.next().await {
-        if let Body::Request(request) = body {
-            let req_buf = encode_request(&request)?;
+        let request = match body {
+            Body::Request(req) => req,
+            _ => break,
+        };
 
-            let mut resp_ptr: *mut c_char = std::ptr::null_mut();
-            let mut resp_len: c_int = 0;
-
-            let rc = unsafe {
-                handler(
-                    id as c_uint,
-                    req_buf.as_ptr() as *const c_char,
-                    req_buf.len() as c_int,
-                    &mut resp_ptr,
-                    &mut resp_len,
-                )
-            };
-
-            if rc != 0 {
-                return Err(
-                    anyhow!("{} failed (task {}, rc={})", handler_name, id, rc).into(),
-                );
-            }
-
-            let response = if !resp_ptr.is_null() && resp_len > 0 {
-                let buf = unsafe { FfiBuffer::new(resp_ptr, resp_len as usize) };
-                decode_response(buf.as_bytes())?
-            } else {
-                if !resp_ptr.is_null() {
-                    unsafe { ffi_free(resp_ptr) };
-                }
-                Response::default()
-            };
-
-            let task_result = TaskResult::new_with_body(id, Body::Response(response));
-
-            // Forward the previous result as an intermediate message.
-            if let Some(prev) = last_result.take() {
-                let _ = sender.unbounded_send(prev);
-            }
-            last_result = Some(task_result);
-        } else {
-            break;
+        if let Some(prev) = last_response.take() {
+            if channel.send(prev).is_err() { break; }
         }
+
+        let req_buf = match encode_request(&request) {
+            Ok(b) => b,
+            Err(e) => return RtResult::Error(format!("{}: {}", handler_name, e)),
+        };
+
+        let mut resp_ptr: *mut c_char = std::ptr::null_mut();
+        let mut resp_len: c_int = 0;
+
+        let rc = unsafe {
+            handler(
+                id as c_uint,
+                req_buf.as_ptr() as *const c_char,
+                req_buf.len() as c_int,
+                &mut resp_ptr,
+                &mut resp_len,
+            )
+        };
+
+        if rc != 0 {
+            return RtResult::Error(format!("{} failed (task {}, rc={})", handler_name, id, rc));
+        }
+
+        let response = if !resp_ptr.is_null() && resp_len > 0 {
+            let buf = unsafe { FfiBuffer::new(resp_ptr, resp_len as usize) };
+            match decode_response(buf.as_bytes()) {
+                Ok(r) => r,
+                Err(e) => return RtResult::Error(format!("{}: {}", handler_name, e)),
+            }
+        } else {
+            if !resp_ptr.is_null() { unsafe { ffi_free(resp_ptr) }; }
+            Response::default()
+        };
+
+        last_response = Some(Body::Response(response));
     }
 
-    last_result.ok_or_else(|| anyhow!("module {} produced no output", handler_name).into())
+    match last_response {
+        Some(body) => RtResult::Done(body),
+        None => RtResult::Error(format!("module {} produced no output", handler_name)),
+    }
 }

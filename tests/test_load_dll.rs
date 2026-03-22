@@ -1,11 +1,9 @@
-use libloading::{Library, Symbol};
-use malefic_proto::module::MaleficBundle;
+use libloading::Library;
+use malefic_module::MaleficBundle;
 use malefic_proto::proto::implantpb::spite::Body;
 use malefic_proto::proto::modulepb;
+use malefic_runtime::host::{RtVTable, RtBundle};
 use std::path::PathBuf;
-
-#[allow(improper_ctypes_definitions)]
-type RegisterModulesFn = unsafe extern "C" fn() -> MaleficBundle;
 
 fn find_dll() -> PathBuf {
     if let Ok(p) = std::env::var("MALEFIC_3RD_DLL") {
@@ -28,7 +26,7 @@ fn find_dll() -> PathBuf {
 
     panic!(
         "malefic_3rd.dll not found. Build it first:\n  \
-         cargo build --target x86_64-pc-windows-gnu --features golang_module [--release]"
+         cargo build --target x86_64-pc-windows-gnu --features full --release"
     );
 }
 
@@ -37,10 +35,20 @@ unsafe fn load_bundle() -> (Library, MaleficBundle) {
     println!("Loading DLL: {}", dll_path.display());
 
     let lib = Library::new(&dll_path).expect("Failed to load malefic_3rd.dll");
-    let register: Symbol<RegisterModulesFn> = lib
-        .get(b"register_modules")
-        .expect("Symbol 'register_modules' not found");
-    let bundle = register();
+
+    // Load via runtime protocol (rt_* exports) instead of old register_modules().
+    let vtable = RtVTable::resolve(|name| {
+        let name_bytes = format!("{}\0", name);
+        lib.get::<*const ()>(name_bytes.as_bytes())
+            .ok()
+            .map(|sym| *sym as *const core::ffi::c_void)
+    })
+    .expect("Failed to resolve rt_* vtable from DLL");
+
+    let rt_bundle = RtBundle::try_new(vtable)
+        .expect("ABI version mismatch");
+
+    let bundle = rt_bundle.into_bundle();
     (lib, bundle)
 }
 
@@ -71,7 +79,7 @@ fn test_golang_module_single_request() {
 
         let (input_tx, mut input_rx) = futures::channel::mpsc::unbounded::<Body>();
         let (mut output_tx, _output_rx) =
-            futures::channel::mpsc::unbounded::<malefic_proto::module::TaskResult>();
+            futures::channel::mpsc::unbounded::<malefic_module::TaskResult>();
 
         let request = modulepb::Request {
             input: "helloworld".to_string(),
@@ -84,7 +92,7 @@ fn test_golang_module_single_request() {
 
         let task_id = 100u32;
         let result =
-            futures::executor::block_on(module.run(task_id, &mut input_rx, &mut output_tx));
+            malefic_common::block_on(2, module.run(task_id, &mut input_rx, &mut output_tx));
 
         let task_result = result.expect("module.run() returned error");
         assert_eq!(task_result.task_id, task_id);
@@ -113,7 +121,7 @@ fn test_golang_module_multi_stream() {
 
         let (input_tx, mut input_rx) = futures::channel::mpsc::unbounded::<Body>();
         let (mut output_tx, mut output_rx) =
-            futures::channel::mpsc::unbounded::<malefic_proto::module::TaskResult>();
+            futures::channel::mpsc::unbounded::<malefic_module::TaskResult>();
 
         let messages = vec!["alpha", "beta", "gamma"];
 
@@ -130,7 +138,7 @@ fn test_golang_module_multi_stream() {
 
         let task_id = 200u32;
         let result =
-            futures::executor::block_on(module.run(task_id, &mut input_rx, &mut output_tx));
+            malefic_common::block_on(2, module.run(task_id, &mut input_rx, &mut output_tx));
 
         // Collect intermediate + final responses.
         let mut responses = Vec::new();
@@ -173,7 +181,7 @@ fn test_c_module_single_request() {
 
         let (input_tx, mut input_rx) = futures::channel::mpsc::unbounded::<Body>();
         let (mut output_tx, _output_rx) =
-            futures::channel::mpsc::unbounded::<malefic_proto::module::TaskResult>();
+            futures::channel::mpsc::unbounded::<malefic_module::TaskResult>();
 
         let request = modulepb::Request {
             input: "helloworld".to_string(),
@@ -186,7 +194,7 @@ fn test_c_module_single_request() {
 
         let task_id = 300u32;
         let result =
-            futures::executor::block_on(module.run(task_id, &mut input_rx, &mut output_tx));
+            malefic_common::block_on(2, module.run(task_id, &mut input_rx, &mut output_tx));
 
         let task_result = result.expect("module.run() returned error");
         assert_eq!(task_result.task_id, task_id);
@@ -215,7 +223,7 @@ fn test_zig_module_single_request() {
 
         let (input_tx, mut input_rx) = futures::channel::mpsc::unbounded::<Body>();
         let (mut output_tx, _output_rx) =
-            futures::channel::mpsc::unbounded::<malefic_proto::module::TaskResult>();
+            futures::channel::mpsc::unbounded::<malefic_module::TaskResult>();
 
         let request = modulepb::Request {
             input: "helloworld".to_string(),
@@ -228,7 +236,7 @@ fn test_zig_module_single_request() {
 
         let task_id = 400u32;
         let result =
-            futures::executor::block_on(module.run(task_id, &mut input_rx, &mut output_tx));
+            malefic_common::block_on(2, module.run(task_id, &mut input_rx, &mut output_tx));
 
         let task_result = result.expect("module.run() returned error");
         assert_eq!(task_result.task_id, task_id);
@@ -265,7 +273,7 @@ unsafe fn run_multi_stream_batch(
 
     let (input_tx, mut input_rx) = futures::channel::mpsc::unbounded::<Body>();
     let (mut output_tx, mut output_rx) =
-        futures::channel::mpsc::unbounded::<malefic_proto::module::TaskResult>();
+        futures::channel::mpsc::unbounded::<malefic_module::TaskResult>();
 
     for msg in messages {
         let request = modulepb::Request {
@@ -279,7 +287,7 @@ unsafe fn run_multi_stream_batch(
     drop(input_tx);
 
     let result =
-        futures::executor::block_on(module.run(task_id, &mut input_rx, &mut output_tx));
+        malefic_common::block_on(2, module.run(task_id, &mut input_rx, &mut output_tx));
 
     // Drain intermediate results from sender channel.
     let mut responses = Vec::new();
@@ -419,12 +427,12 @@ unsafe fn run_interleaved_test(
 
     let (input_tx, mut input_rx) = futures::channel::mpsc::unbounded::<Body>();
     let (mut output_tx, mut output_rx) =
-        futures::channel::mpsc::unbounded::<malefic_proto::module::TaskResult>();
+        futures::channel::mpsc::unbounded::<malefic_module::TaskResult>();
 
     // Run the module on a background thread.
     let handle = std::thread::spawn(move || {
         let result =
-            futures::executor::block_on(module.run(task_id, &mut input_rx, &mut output_tx));
+            malefic_common::block_on(2, module.run(task_id, &mut input_rx, &mut output_tx));
         (result, output_tx) // return output_tx so it's dropped after run() finishes
     });
 
@@ -563,7 +571,7 @@ fn test_nim_module_single_request() {
 
         let (input_tx, mut input_rx) = futures::channel::mpsc::unbounded::<Body>();
         let (mut output_tx, _output_rx) =
-            futures::channel::mpsc::unbounded::<malefic_proto::module::TaskResult>();
+            futures::channel::mpsc::unbounded::<malefic_module::TaskResult>();
 
         let request = modulepb::Request {
             input: "helloworld".to_string(),
@@ -576,7 +584,7 @@ fn test_nim_module_single_request() {
 
         let task_id = 500u32;
         let result =
-            futures::executor::block_on(module.run(task_id, &mut input_rx, &mut output_tx));
+            malefic_common::block_on(2, module.run(task_id, &mut input_rx, &mut output_tx));
 
         let task_result = result.expect("module.run() returned error");
         assert_eq!(task_result.task_id, task_id);

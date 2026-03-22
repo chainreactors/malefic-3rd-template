@@ -1,5 +1,4 @@
-use malefic_module::prelude::*;
-use malefic_module::ffi::*;
+use malefic_3rd_ffi::*;
 use std::ffi::{c_char, c_int, c_uint};
 
 extern "C" {
@@ -17,49 +16,15 @@ pub struct ZigModule {
     name: String,
 }
 
-impl ZigModule {
-    fn init() -> Self {
+impl RtModule for ZigModule {
+    fn name() -> &'static str { "example_zig" }
+
+    fn new() -> Self {
         let name = unsafe { ffi_module_name(ZigModuleName, false) };
         Self { name }
     }
-}
 
-#[async_trait]
-impl Module for ZigModule {
-    fn name() -> &'static str
-    where
-        Self: Sized,
-    {
-        "zig_module"
+    fn run(&mut self, id: u32, ch: &RtChannel) -> RtResult {
+        ffi_handler_loop(id, ch, ZigModuleHandle, "ZigModuleHandle")
     }
-
-    fn new() -> Self
-    where
-        Self: Sized,
-    {
-        ZigModule::init()
-    }
-
-    fn new_instance(&self) -> Box<MaleficModule> {
-        Box::new(ZigModule {
-            name: self.name.clone(),
-        })
-    }
-}
-
-#[async_trait]
-impl ModuleImpl for ZigModule {
-    async fn run(
-        &mut self,
-        id: u32,
-        receiver: &mut Input,
-        sender: &mut Output,
-    ) -> ModuleResult {
-        ffi_run_loop(id, receiver, sender, ZigModuleHandle, "ZigModuleHandle").await
-    }
-}
-
-pub fn register(map: &mut MaleficBundle) {
-    let module = ZigModule::init();
-    map.insert(module.name.clone(), Box::new(module));
 }

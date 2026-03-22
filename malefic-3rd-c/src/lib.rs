@@ -1,5 +1,4 @@
-use malefic_module::prelude::*;
-use malefic_module::ffi::*;
+use malefic_3rd_ffi::*;
 use std::ffi::{c_char, c_int, c_uint};
 
 extern "C" {
@@ -17,49 +16,15 @@ pub struct CModule {
     name: String,
 }
 
-impl CModule {
-    fn init() -> Self {
+impl RtModule for CModule {
+    fn name() -> &'static str { "example_c" }
+
+    fn new() -> Self {
         let name = unsafe { ffi_module_name(CModuleName, false) };
         Self { name }
     }
-}
 
-#[async_trait]
-impl Module for CModule {
-    fn name() -> &'static str
-    where
-        Self: Sized,
-    {
-        "c_module"
+    fn run(&mut self, id: u32, ch: &RtChannel) -> RtResult {
+        ffi_handler_loop(id, ch, CModuleHandle, "CModuleHandle")
     }
-
-    fn new() -> Self
-    where
-        Self: Sized,
-    {
-        CModule::init()
-    }
-
-    fn new_instance(&self) -> Box<MaleficModule> {
-        Box::new(CModule {
-            name: self.name.clone(),
-        })
-    }
-}
-
-#[async_trait]
-impl ModuleImpl for CModule {
-    async fn run(
-        &mut self,
-        id: u32,
-        receiver: &mut Input,
-        sender: &mut Output,
-    ) -> ModuleResult {
-        ffi_run_loop(id, receiver, sender, CModuleHandle, "CModuleHandle").await
-    }
-}
-
-pub fn register(map: &mut MaleficBundle) {
-    let module = CModule::init();
-    map.insert(module.name.clone(), Box::new(module));
 }

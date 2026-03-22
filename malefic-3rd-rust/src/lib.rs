@@ -1,33 +1,20 @@
-use async_trait::async_trait;
-use malefic_macro::module_impl;
-use malefic_module::prelude::*;
+use malefic_3rd_ffi::{RtModule, RtChannel, RtResult, Body, Response};
 
-pub struct RustModule {}
+pub struct RustModule;
 
-#[async_trait]
-#[module_impl("rust_module")]
-impl Module for RustModule {}
+impl RtModule for RustModule {
+    fn name() -> &'static str { "rust_module" }
+    fn new() -> Self { Self }
 
-#[async_trait]
-impl ModuleImpl for RustModule {
-    #[allow(unused_variables)]
-    async fn run(
-        &mut self,
-        id: u32,
-        receiver: &mut Input,
-        sender: &mut Output,
-    ) -> ModuleResult {
-        let request = check_request!(receiver, Body::Request)?;
-        let response = Response {
+    fn run(&mut self, _task_id: u32, ch: &RtChannel) -> RtResult {
+        match ch.recv() {
+            Ok(Body::Request(_)) => {}
+            Ok(_) => return RtResult::Error("expected Body::Request".into()),
+            Err(e) => return RtResult::Error(e.to_string()),
+        }
+        RtResult::Done(Body::Response(Response {
             output: "this is rust module".to_string(),
             ..Default::default()
-        };
-        Ok(TaskResult::new_with_body(id, Body::Response(response)))
+        }))
     }
-}
-
-/// Register the Rust module into the bundle.
-pub fn register(map: &mut MaleficBundle) {
-    let module = RustModule::new();
-    map.insert(<RustModule as Module>::name().to_string(), Box::new(module));
 }
