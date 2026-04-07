@@ -3,10 +3,10 @@
 //! Exports 7 `extern "C"` functions (rt_abi_version, rt_module_count, etc.)
 //! for cross-version-safe hot loading.
 
-use malefic_runtime::abi::{RtBuffer, RtModuleHandle, RtStatus, RT_ABI_VERSION};
-use malefic_runtime::abi::{RtSendFn, RtRecvFn, RtTryRecvFn, RtHostFreeFn};
-use malefic_runtime::module_sdk::{RtModule, RtChannel, ErasedRtModule, RtModuleDescriptor};
-use malefic_runtime::codec;
+use malefic_module::abi::{RtBuffer, RtModuleHandle, RtStatus, RT_ABI_VERSION};
+use malefic_module::abi::{RtSendFn, RtRecvFn, RtTryRecvFn, RtHostFreeFn};
+use malefic_module::module_sdk::{RtModule, RtChannel, ErasedRtModule, RtModuleDescriptor};
+use malefic_module::codec;
 
 // ── Registry ────────────────────────────────────────────────────────────────
 
@@ -142,11 +142,11 @@ pub extern "C" fn rt_module_run(
     };
 
     let (status, buf) = match module.run(task_id, &channel) {
-        malefic_runtime::module_sdk::RtResult::Done(body) => {
+        malefic_module::module_sdk::RtResult::Done(body) => {
             let bytes = codec::encode_body(task_id, body);
             (RtStatus::Done, RtBuffer::from_vec(bytes))
         }
-        malefic_runtime::module_sdk::RtResult::Error(msg) => {
+        malefic_module::module_sdk::RtResult::Error(msg) => {
             (RtStatus::Error, RtBuffer::from_vec(msg.into_bytes()))
         }
     };
@@ -157,5 +157,5 @@ pub extern "C" fn rt_module_run(
 
 #[no_mangle]
 pub extern "C" fn rt_free(buf: RtBuffer) {
-    unsafe { malefic_runtime::abi::rt_buffer_from_vec_free(buf); }
+    unsafe { malefic_module::abi::rt_buffer_from_vec_free(buf); }
 }

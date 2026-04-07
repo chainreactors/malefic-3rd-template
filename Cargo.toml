@@ -9,10 +9,10 @@ members = [
 ]
 
 [workspace.dependencies]
-malefic-proto = { git = "https://github.com/chainreactors/malefic", branch = "crates" }
-malefic-module = { git = "https://github.com/chainreactors/malefic", branch = "crates" }
-malefic-runtime = { git = "https://github.com/chainreactors/malefic", branch = "crates", default-features = false }
-malefic-common = { git = "https://github.com/chainreactors/malefic", branch = "crates", default-features = false, features = ["random_nanorand"] }
+malefic-proto = { git = "https://github.com/chainreactors/malefic", tag = "v0.3.0" }
+malefic-module = { git = "https://github.com/chainreactors/malefic", tag = "v0.3.0", features = ["ffi"] }
+malefic-runtime = { git = "https://github.com/chainreactors/malefic", tag = "v0.3.0", default-features = false }
+malefic-common = { git = "https://github.com/chainreactors/malefic", tag = "v0.3.0", default-features = false, features = ["random_nanorand"] }
 
 futures = "0.3.31"
 prost = { git = "https://github.com/chainreactors/prost.git", branch = "skip-field-names-v0.14.1" }
@@ -25,7 +25,7 @@ getrandom = "=0.2.16"
 
 [package]
 name = "malefic-3rd-template"
-version = "0.1.0"
+version = "0.3.0"
 edition = "2021"
 
 [lib]
@@ -47,7 +47,7 @@ zig_module = ["malefic-3rd-zig"]
 nim_module = ["malefic-3rd-nim"]
 
 [dependencies]
-malefic-runtime = { workspace = true }
+malefic-module = { workspace = true, features = ["ffi"] }
 malefic-3rd-rust = { path = "malefic-3rd-rust", optional = true }
 malefic-3rd-go = { path = "malefic-3rd-go", optional = true }
 malefic-3rd-c = { path = "malefic-3rd-c", optional = true }

@@ -9,5 +9,5 @@ path = "src/lib.rs"
 
 [dependencies]
 malefic-proto = { workspace = true }
-malefic-runtime = { workspace = true }
+malefic-module = { workspace = true, features = ["ffi"] }
 prost = { workspace = true }

