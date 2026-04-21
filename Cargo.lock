@@ -392,7 +392,7 @@ dependencies = [
 
 [[package]]
 name = "malefic-3rd-template"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "bytes",
  "crypto-common",
@@ -424,6 +424,7 @@ dependencies = [
 [[package]]
 name = "malefic-common"
 version = "0.1.0"
+source = "git+https://github.com/chainreactors/malefic?tag=v0.3.0#4ad28317137f731ae15f5c1fd29d9a6b99a21b62"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -439,6 +440,7 @@ dependencies = [
 [[package]]
 name = "malefic-crypto"
 version = "0.1.0"
+source = "git+https://github.com/chainreactors/malefic?tag=v0.3.0#4ad28317137f731ae15f5c1fd29d9a6b99a21b62"
 dependencies = [
  "aes",
  "cfg-if",
@@ -450,6 +452,7 @@ dependencies = [
 [[package]]
 name = "malefic-gateway"
 version = "0.1.0"
+source = "git+https://github.com/chainreactors/malefic?tag=v0.3.0#4ad28317137f731ae15f5c1fd29d9a6b99a21b62"
 dependencies = [
  "malefic-macro",
  "nanorand",
@@ -458,6 +461,7 @@ dependencies = [
 [[package]]
 name = "malefic-macro"
 version = "0.1.1"
+source = "git+https://github.com/chainreactors/malefic?tag=v0.3.0#4ad28317137f731ae15f5c1fd29d9a6b99a21b62"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -468,6 +472,7 @@ dependencies = [
 [[package]]
 name = "malefic-module"
 version = "0.1.0"
+source = "git+https://github.com/chainreactors/malefic?tag=v0.3.0#4ad28317137f731ae15f5c1fd29d9a6b99a21b62"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -483,6 +488,7 @@ dependencies = [
 [[package]]
 name = "malefic-proto"
 version = "0.1.0"
+source = "git+https://github.com/chainreactors/malefic?tag=v0.3.0#4ad28317137f731ae15f5c1fd29d9a6b99a21b62"
 dependencies = [
  "anyhow",
  "cfg-if",
@@ -498,6 +504,7 @@ dependencies = [
 [[package]]
 name = "malefic-runtime"
 version = "0.1.0"
+source = "git+https://github.com/chainreactors/malefic?tag=v0.3.0#4ad28317137f731ae15f5c1fd29d9a6b99a21b62"
 dependencies = [
  "anyhow",
  "async-trait",
